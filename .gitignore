@@ -1,0 +1,40 @@
+# ---------------- PYTHON ----------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# virtual environments
+.venv/
+venv/
+env/
+
+# ---------------- SYSTEM ----------------
+.DS_Store
+Thumbs.db
+
+# ---------------- IDE ----------------
+.idea/
+.vscode/
+
+# ---------------- LOGS ----------------
+*.log
+
+# ---------------- DATA (IMPORTANT) ----------------
+dataset_isl/
+features/
+
+# ---------------- MODEL FILES ----------------
+# Uncomment ONE option depending on your goal
+
+# Option A (recommended for GitHub): IGNORE models
+*.keras
+*.h5
+*.npy
+
+# Option B (for demo app): KEEP models
+# (comment above lines if you want to upload model)
+
+# ---------------- TEMP FILES ----------------
+*.tmp
+*.bak
