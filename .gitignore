@@ -4,34 +4,49 @@ __pycache__/
 *.pyo
 *.pyd
 
-# virtual environments
+# ---------------- VIRTUAL ENVIRONMENTS ----------------
 .venv/
 venv/
 env/
 
-# ---------------- SYSTEM ----------------
+# ---------------- SYSTEM FILES ----------------
 .DS_Store
 Thumbs.db
 
-# ---------------- IDE ----------------
+# ---------------- IDE SETTINGS ----------------
 .idea/
 .vscode/
 
 # ---------------- LOGS ----------------
 *.log
 
-# ---------------- DATA (IMPORTANT) ----------------
+# ---------------- DATASETS ----------------
+dataset/
 dataset_isl/
 features/
+debug_results/
+
+# ---------------- NUMPY / DATA FILES ----------------
+*.npy
+*.npz
+*.csv
+
+# ---------------- GENERATED REPORTS ----------------
+*.pdf
 
 # ---------------- MODEL FILES ----------------
-# Uncomment ONE option depending on your goal
+# Uncomment if you want to ignore trained models
 
-# Option A (recommended for GitHub): IGNORE models
+# *.h5
+# *.keras
 
-
-# Option B (for demo app): KEEP models
-# (comment above lines if you want to upload model)
+# ---------------- VIDEOS & IMAGES ----------------
+*.mp4
+*.avi
+*.mov
+*.jpg
+*.jpeg
+*.png
 
 # ---------------- TEMP FILES ----------------
 *.tmp

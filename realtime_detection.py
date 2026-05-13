@@ -7,19 +7,21 @@ from mediapipe.tasks.python import vision
 from mediapipe.tasks.python import BaseOptions
 
 # ---------------- LOAD ----------------
-model = tf.keras.models.load_model("isl_model.keras")
+model = tf.keras.models.load_model("isl_model_regularized.keras")
 labels = np.load("labels.npy", allow_pickle=True)
 mean = np.load("norm_mean.npy")
 std = np.load("norm_std.npy")
 
 # ---------------- CONFIG ----------------
 SEQ_LENGTH = 45
-PREDICTION_WINDOW = 10
+PREDICTION_WINDOW = 8
 
-CONF_THRESHOLD = 0.75
+CONF_THRESHOLD = 0.7
 STABILITY_THRESHOLD = 0.7
 
-PAUSE_FRAMES = 15
+MIN_PRED_FRAMES = 4     # consistency requirement
+COOLDOWN_FRAMES = 8     # delay between words
+PAUSE_FRAMES = 10
 
 # ---------------- STATE ----------------
 sequence = deque(maxlen=SEQ_LENGTH)
@@ -27,6 +29,8 @@ pred_buffer = deque(maxlen=PREDICTION_WINDOW)
 sentence = []
 
 pause_counter = 0
+cooldown = 0
+
 current_word = "..."
 confidence = 0.0
 
@@ -64,7 +68,15 @@ def extract_keypoints(result):
             elif label == "Right":
                 right = feats
 
-    return np.concatenate([left, right])
+    return np.concatenate([left, right])  # 136
+
+
+# ---------------- SMOOTHING ----------------
+def smooth_seq(seq):
+    smoothed = seq.copy()
+    for i in range(1, len(seq) - 1):
+        smoothed[i] = (seq[i - 1] + seq[i] + seq[i + 1]) / 3.0
+    return smoothed
 
 
 # ---------------- MEDIAPIPE ----------------
@@ -91,7 +103,7 @@ while True:
 
     # ---------------- PREPROCESS ----------------
     h, w, _ = frame.shape
-    frame = frame[int(h*0.1):int(h*0.9), int(w*0.15):int(w*0.85)]
+    frame = frame[int(h * 0.1):int(h * 0.9), int(w * 0.15):int(w * 0.85)]
     frame = cv2.resize(frame, (640, 480))
     frame = cv2.convertScaleAbs(frame, alpha=1.2, beta=15)
 
@@ -104,26 +116,36 @@ while True:
 
     result = hand_landmarker.detect(mp_image)
 
+    # ---------------- COOLDOWN UPDATE ----------------
+    if cooldown > 0:
+        cooldown -= 1
+
     # ---------------- NO HAND = PAUSE ----------------
     if not result.hand_landmarks:
 
         pause_counter += 1
 
-        # 🔥 COMMIT WORD DURING PAUSE
         if pause_counter > PAUSE_FRAMES and len(pred_buffer) > 0:
 
-            most_common, count = Counter(pred_buffer).most_common(1)[0]
-            stability = count / len(pred_buffer)
+            preds = [p for p, c in pred_buffer]
+            most_common, count = Counter(preds).most_common(1)[0]
+            stability = count / len(preds)
 
-            if confidence > CONF_THRESHOLD and stability > STABILITY_THRESHOLD:
-                word = labels[most_common]
+            confs = [c for p, c in pred_buffer if p == most_common]
+            avg_conf = np.mean(confs) if confs else 0
 
-                if len(sentence) == 0 or sentence[-1] != word:
-                    sentence.append(word)
+            if avg_conf > CONF_THRESHOLD and stability > STABILITY_THRESHOLD:
 
-            # reset buffers
+                if most_common < len(labels):
+                    word = labels[most_common]
+
+                    if cooldown == 0:
+                        if len(sentence) == 0 or sentence[-1] != word:
+                            sentence.append(word)
+                            cooldown = COOLDOWN_FRAMES
+
             pred_buffer.clear()
-            sequence.clear()
+            sequence = deque(maxlen=SEQ_LENGTH)
 
         current_word = "..."
         confidence = 0.0
@@ -132,7 +154,7 @@ while True:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         cv2.putText(frame,
-                    "Sentence: " + " ".join(sentence[-5:]),
+                    "Sentence: " + " ".join(sentence[-4:]),
                     (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, (0, 255, 255), 2)
@@ -147,21 +169,40 @@ while True:
     pause_counter = 0
 
     keypoints = extract_keypoints(result)
+
+    # 🔥 Match training (remove first 3 features)
+    keypoints = keypoints[3:]
+
     sequence.append(keypoints)
 
     # ---------------- PREDICTION ----------------
     if len(sequence) == SEQ_LENGTH:
 
         seq = np.array(sequence)
-        seq = (seq - mean) / std
+
+        # smoothing
+        seq = smooth_seq(seq)
+
+        # normalization
+        seq = (seq - mean[3:]) / std[3:]
+
         seq = np.expand_dims(seq, axis=0)
 
         probs = model.predict(seq, verbose=0)[0]
         pred = np.argmax(probs)
         confidence = probs[pred]
 
-        pred_buffer.append(pred)
-        current_word = labels[pred]
+        # stronger filtering
+        if confidence > 0.65:
+            pred_buffer.append((pred, confidence))
+
+        preds = [p for p, _ in pred_buffer]
+
+        if preds:
+            most_common, count = Counter(preds).most_common(1)[0]
+
+            if count >= MIN_PRED_FRAMES and most_common < len(labels):
+                current_word = labels[most_common]
 
     # ---------------- DISPLAY ----------------
     cv2.putText(frame,
@@ -177,7 +218,7 @@ while True:
                 0.7, (255, 0, 0), 2)
 
     cv2.putText(frame,
-                "Sentence: " + " ".join(sentence[-5:]),
+                "Sentence: " + " ".join(sentence[-4:]),
                 (10, 120),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.7, (0, 255, 255), 2)
